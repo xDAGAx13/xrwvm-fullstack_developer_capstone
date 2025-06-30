@@ -14,8 +14,9 @@ import logging
 import json
 from django.views.decorators.csrf import csrf_exempt
 from .populate import initiate
+import os, requests
 
-
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3030")
 # Get an instance of a logger
 logger = logging.getLogger(__name__)
 
@@ -85,8 +86,43 @@ def registration(request):
 
 # # Update the `get_dealerships` view to render the index page with
 # a list of dealerships
-# def get_dealerships(request):
-# ...
+@csrf_exempt              # the React front-end calls this with fetch()
+def get_dealerships(request):
+    """
+    GET  /djangoapp/get_dealers/           → every dealer
+    GET  /djangoapp/get_dealers/?state=TX → dealers in Texas
+
+    JSON response format expected by the React <Dealers/> component:
+        {
+          "dealerships": [
+              {
+                 "id": …, "city": …, "state": …, "address": …,
+                 "zip": …, "lat": …, "long": …,
+                 "short_name": …, "full_name": …
+              },
+              …
+          ]
+        }
+    """
+    state_filter = request.GET.get("state")           # None if absent
+
+    # Build URL for the Node service
+    if state_filter:
+        url = f"{BACKEND_URL}/fetchDealers/{state_filter}"
+    else:
+        url = f"{BACKEND_URL}/fetchDealers"
+
+    try:
+        logger.debug(f"Calling dealer service: {url}")
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        dealers = resp.json()                         # the Express route returns a JSON list
+    except requests.RequestException as exc:
+        logger.error(f"Dealer service error: {exc}")
+        return JsonResponse({"error": "Unable to fetch dealerships"}, status=500)
+
+    # Wrap in an object – React expects the key ‘dealerships’
+    return JsonResponse({"dealerships": dealers}, safe=False)
 
 # Create a `get_dealer_reviews` view to render the reviews of a dealer
 # def get_dealer_reviews(request,dealer_id):
